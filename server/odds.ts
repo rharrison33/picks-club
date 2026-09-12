@@ -16,9 +16,11 @@ function numeric(value: number | string | null | undefined) {
 
 export function chooseOdds(game: BettingGame | undefined) {
   // One actual provider per game; do not blend moneylines from different books.
-  const line = [...(game?.lines ?? [])]
-    .sort((a, b) => Number(numeric(b.spread) !== null) - Number(numeric(a.spread) !== null)
-      || a.provider.localeCompare(b.provider))[0];
+  const line = [...(game?.lines ?? [])].sort(
+    (a, b) =>
+      Number(numeric(b.spread) !== null) - Number(numeric(a.spread) !== null) ||
+      a.provider.localeCompare(b.provider),
+  )[0];
   if (!line) return null;
   return {
     provider: line.provider,

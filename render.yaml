@@ -2,15 +2,15 @@ services:
   - type: web
     name: picks-club
     runtime: docker
-    plan: starter
+    plan: 0.5c-512mb
+    region: oregon
+    autoDeployTrigger: checksPass
     healthCheckPath: /api/health
-    disk:
-      name: picks-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
-      - key: DB_PATH
-        value: /var/data/picks-club.sqlite
+      - key: DATABASE_URL
+        fromDatabase:
+          name: picks-club-db
+          property: connectionString
       - key: APP_ORIGIN
         sync: false
       - key: CFBD_API_KEY
@@ -27,3 +27,12 @@ services:
         sync: false
       - key: PILOT_POOL_LIMIT
         value: 1
+databases:
+  - name: picks-club-db
+    databaseName: picks_club
+    user: picks_club
+    region: oregon
+    plan: 0.1c-256mb
+    postgresMajorVersion: "17"
+    diskSizeGB: 1
+    ipAllowList: []

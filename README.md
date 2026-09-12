@@ -23,7 +23,7 @@ Email verification and password recovery use Resend once configured. Registratio
 
 - Frontend: React and TypeScript
 - Backend: Node.js, Express, and TypeScript
-- Database: SQLite (built into Node.js)
+- Database: Postgres (`pg`), with PGlite for isolated tests
 - Sports data: [CollegeFootballData](https://collegefootballdata.com/)
 
 ## Local setup
@@ -99,17 +99,17 @@ Missing odds are shown as unavailable, never interpreted as a zero-point spread.
 
 ## Storage and authentication
 
-Accounts, memberships, invitations, sessions, picks, pick audit records, and weekly snapshots persist in `.data/picks-club.sqlite`. The database and its journals are ignored by Git. Back them up as private application data.
+Accounts, profiles, memberships, sessions, picks, results, and weekly snapshots persist in Postgres. Set `DATABASE_URL` privately in `.env`. See [DATABASE.md](DATABASE.md) for local setup, SQLite import, backups, and managed hosting.
 
 Passwords are salted and hashed using scrypt. Random session tokens are stored hashed in the database and sent in HttpOnly, SameSite=Strict cookies. Sessions expire after seven days. Production cookies require HTTPS. Mutations require a custom request header and an allowed origin. Authentication attempts are rate limited within the server process.
 
-This is a local development implementation. Email verification and password recovery are implemented but require real delivery testing. Before public launch, complete hosting configuration, off-host backups, monitoring, and the gates in LAUNCH.md. Multiple application instances will require shared storage and distributed rate limiting. Member lists expose display name to pool members, not email.
+This is a local development implementation. Email verification and password recovery are implemented but require real delivery testing. Before public launch, complete hosting configuration, off-host backups, monitoring, and the gates in LAUNCH.md. Postgres provides shared storage; multiple application instances still require distributed rate limiting. Member lists expose display name to pool members, not email.
 
 Optional server environment settings:
 
 - `PORT`: backend port, default 3001; also update the frontend proxy if changed.
 - `APP_ORIGIN`: exact allowed browser origin for hosting or an alternate development URL.
-- `DB_PATH`: alternate SQLite file path.
+- `DATABASE_URL`: required Postgres connection URL; keep credentials private.
 - `NODE_ENV=production`: secure cookies; requires HTTPS.
 
 The backend listens on loopback locally. Hosting and real payment integrations are separate work. Venmo, Cash App, Apple Pay, and PayPal are future options, not connected providers.
@@ -126,5 +126,3 @@ npm run build
 ```
 
 Tests cover authentication, session invalidation, pool isolation, organizer limits, permissions, invitation rotation, fee validation, publication locking, favorite-team ranking, and missing-odds handling.
-
-
