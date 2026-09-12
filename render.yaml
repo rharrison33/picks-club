@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: picks-club
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    disk:
+      name: picks-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DB_PATH
+        value: /var/data/picks-club.sqlite
+      - key: APP_ORIGIN
+        sync: false
+      - key: CFBD_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: TRUST_PROXY_HOPS
+        value: 1
+      - key: REGISTRATION_CODE
+        generateValue: true
+      - key: PILOT_ORGANIZER_EMAILS
+        sync: false
+      - key: PILOT_POOL_LIMIT
+        value: 1

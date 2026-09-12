@@ -4,23 +4,26 @@ A sports pick’em app for competing with friends. Built step by step to practic
 
 ## Status
 
-Planning and initial setup. Application code, dependencies, and run scripts have not been added yet.
+Accounts, private pools, organizer/player views, weekly entry amounts, and eight-game lineups are implemented. Layouts adapt to mobile and desktop. Saved picks, kickoff locks, and weekly standings are implemented. Payments are not enabled. See LAUNCH.md for the pilot plan and outstanding launch gates.
 
-## First version
+## Current features
 
-- One Saturday college football contest with eight games.
-- Import schedules and results automatically from CollegeFootballData.
-- Automatically suggest eight games, with organizer overrides before picks open.
-- Pick outright winners; lock each pick at kickoff on the server.
-- Award one point for each correct pick and display a leaderboard.
+- Register with email, password, display name, and 1–5 favorite teams; sign in and sign out.
+- Create multiple private pools or join using an invitation code.
+- One or two organizers per pool, enforced on the server.
+- Set a default weekly amount per player and override it for individual Saturdays.
+- Save draft lineups, choose eight future games, and publish. Publication locks games and entry amounts.
+- Players see published weeks; organizers have editing controls and a player preview.
+- Schedules, logos, AP ranks, records, and available odds from CollegeFootballData.
+- Suggestions prioritize ranked close matchups and each pool's favorite teams.
 
-Game-selection rules, the contest timezone, tie handling, and postponed-game rules will be finalized during implementation. Free-tier coverage, quotas, and result delays must be checked before choosing a refresh schedule.
+Email verification and password recovery use Resend once configured. Registration requires a recorded 21+ acknowledgment. Payment integrations are future work. Existing browser-only pools are not migrated into accounts.
 
-## Planned stack
+## Stack
 
 - Frontend: React and TypeScript
 - Backend: Node.js, Express, and TypeScript
-- Database: Postgres
+- Database: SQLite (built into Node.js)
 - Sports data: [CollegeFootballData](https://collegefootballdata.com/)
 
 ## Local setup
@@ -45,7 +48,25 @@ Get a [free CollegeFootballData API key](https://collegefootballdata.com/key) an
 CFBD_API_KEY=your_key_here
 ```
 
-The environment file does not load itself. When the backend is added, its startup configuration must load this root `.env` file. The backend will read `process.env.CFBD_API_KEY`.
+Requires Node.js 24 or newer. Start the backend in one terminal:
+
+```powershell
+cd server
+npm ci
+npm run dev
+```
+
+Start the frontend in a second terminal from the repository root:
+
+```powershell
+cd client
+npm ci
+npm run dev
+```
+
+Open http://localhost:5173 and choose **Register**. Create a pool, share its invitation code, and promote a second member to organizer if desired. There is no default account or password.
+
+The backend loads the root `.env` automatically. Accounts and pools work without a sports API key; game feeds require it. The frontend proxies `/api` to port 3001. Run npm commands in the client or server folder, not the repository root.
 
 ## Keeping the key private
 
@@ -64,12 +85,46 @@ git status --short
 
 The first command should print `.env`; the second should not list it as an untracked file.
 
-## Build milestones
+## Weekly flow
 
-1. Scaffold the frontend and backend.
-2. Fetch upcoming Saturday games through the backend and display them in React.
-3. Store games and generate an eight-game contest with optional organizer edits.
-4. Add accounts, picks, and server-enforced deadlines.
-5. Import final results and calculate standings.
+Choose a Saturday in the pool's timezone, review suggestions and the entry amount, save a draft, then publish exactly eight future games. Publishing locks the amount and lineup. Players save picks individually before each published kickoff. Final results score one point per outright winner; ties score zero. No payment is collected.
 
-Entry fees and payouts are not implemented.
+Amounts are stored in whole cents, from $10 to $2,500 per player. A pool's default applies to unsaved weeks; saved drafts and published weeks keep their own amount. Replacing an invitation code disables the old code without removing members.
+
+## Game selection
+
+Games with an AP-ranked team and an absolute spread of seven points or less receive the highest priority. Within that tier, recommendations consider favorite teams, competitiveness, AP rank, and whether both teams are ranked. Each member contributes at most one favorite-team vote per matchup, whether they chose one team or five. Stable tiebreakers keep repeated selections consistent. Suggestions exclude games that have started.
+
+Missing odds are shown as unavailable, never interpreted as a zero-point spread. One available provider is selected deterministically. Odds are cached, not live or guaranteed prices. Rankings use the latest available AP poll up to the selected week. Optional missing metadata does not block schedules.
+
+## Storage and authentication
+
+Accounts, memberships, invitations, sessions, picks, pick audit records, and weekly snapshots persist in `.data/picks-club.sqlite`. The database and its journals are ignored by Git. Back them up as private application data.
+
+Passwords are salted and hashed using scrypt. Random session tokens are stored hashed in the database and sent in HttpOnly, SameSite=Strict cookies. Sessions expire after seven days. Production cookies require HTTPS. Mutations require a custom request header and an allowed origin. Authentication attempts are rate limited within the server process.
+
+This is a local development implementation. Email verification and password recovery are implemented but require real delivery testing. Before public launch, complete hosting configuration, off-host backups, monitoring, and the gates in LAUNCH.md. Multiple application instances will require shared storage and distributed rate limiting. Member lists expose display name to pool members, not email.
+
+Optional server environment settings:
+
+- `PORT`: backend port, default 3001; also update the frontend proxy if changed.
+- `APP_ORIGIN`: exact allowed browser origin for hosting or an alternate development URL.
+- `DB_PATH`: alternate SQLite file path.
+- `NODE_ENV=production`: secure cookies; requires HTTPS.
+
+The backend listens on loopback locally. Hosting and real payment integrations are separate work. Venmo, Cash App, Apple Pay, and PayPal are future options, not connected providers.
+
+## Checks
+
+```powershell
+cd server
+npm run typecheck
+npm test
+cd ../client
+npm run lint
+npm run build
+```
+
+Tests cover authentication, session invalidation, pool isolation, organizer limits, permissions, invitation rotation, fee validation, publication locking, favorite-team ranking, and missing-odds handling.
+
+

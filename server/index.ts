@@ -1,74 +1,27 @@
-import express from "express";
+import { createApp } from "./app.js";
+import { openDatabase } from "./database.js";
+import { pollSaturdayUpdates } from "./sms.js";
 
-const apiKey = process.env.CFBD_API_KEY;
-
-if (!apiKey) {
-  throw new Error("CFBD_API_KEY is missing from the environment");
+const db = openDatabase();
+if (process.env.NODE_ENV === "production" && (!process.env.APP_ORIGIN?.startsWith("https://") || !process.env.RESEND_API_KEY || !process.env.EMAIL_FROM || !process.env.DB_PATH)) {
+  throw new Error("Production requires HTTPS APP_ORIGIN, RESEND_API_KEY, EMAIL_FROM, and persistent DB_PATH.");
 }
-
-const app = express();
-
-app.use(express.json());
-
-app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
-});
-
-type Game = {
-  id: number;
-  homeTeam: string;
-  awayTeam: string;
-  startDate: string;
-  startTimeTBD: boolean;
+const app = createApp(db);
+let polling = false;
+const poll = async () => {
+  if (polling) return;
+  polling = true;
+  try { await pollSaturdayUpdates(db); } catch { console.error("Saturday result update failed."); } finally { polling = false; }
 };
-
-const weekdayFormatter = new Intl.DateTimeFormat("en-US", {
-  weekday: "long",
-  timeZone: "America/Denver",
+const resultTimer = setInterval(() => { void poll(); }, 5 * 60_000);
+resultTimer.unref();
+void poll();
+const port = Number(process.env.PORT ?? 3001);
+const server = app.listen(port, process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1", () => {
+  console.log("Picks Club API running on port " + port);
 });
-
-app.get("/api/games", async (_req, res) => {
-  try {
-    const response = await fetch(
-      "https://api.collegefootballdata.com/games?year=2026&seasonType=regular&week=3",
-      {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(`Sports API returned ${response.status}`);
-    }
-
-    const games = (await response.json()) as Game[];
-
-    const saturdayGames = games.filter((game) => {
-      if (game.startTimeTBD) return false;
-
-      const kickoff = new Date(game.startDate);
-
-      if (!Number.isFinite(kickoff.getTime())) return false;
-
-      return weekdayFormatter.format(kickoff) === "Saturday";
-    });
-
-    saturdayGames.sort(
-      (a, b) =>
-        new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
-    );
-
-    res.json(saturdayGames);
-  } catch (error) {
-    console.error(
-      error instanceof Error ? error.message : "Could not fetch games",
-    );
-
-    res.status(502).json({ error: "Could not load games" });
-  }
-});
-
-app.listen(3001, "127.0.0.1", () => {
-  console.log("Server running at http://127.0.0.1:3001");
+for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => {
+  clearInterval(resultTimer);
+  server.close(() => { db.close(); process.exit(0); });
+  setTimeout(() => process.exit(1), 10000).unref();
 });

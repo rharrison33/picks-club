@@ -1,102 +1,45 @@
 import { useEffect, useState } from "react";
+import { api, ApiError, messageOf } from "./api";
+import AuthScreen from "./AuthScreen";
+import Dashboard from "./Dashboard";
+import Profile from "./Profile";
+import AccountHelp, { Verification, AgeConsent } from "./AccountHelp";
+import type { Config, User } from "./types";
 import "./App.css";
 
-type Game = {
-  id: number;
-  homeTeam: string;
-  awayTeam: string;
-  startDate: string;
-};
-
 export default function App() {
-  const [games, setGames] = useState<Game[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [config, setConfig] = useState<Config | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
-
-  function toggleGame(id: number) {
-    setSelectedIds((current) => {
-      if (current.includes(id)) {
-        return current.filter((selectedId) => selectedId !== id);
-      }
-
-      if (current.length >= 8) return current;
-
-      return [...current, id];
-    });
-  }
-
+  const [profile, setProfile] = useState(location.hash === "#profile");
+  useEffect(() => { const change = () => setProfile(location.hash === "#profile"); window.addEventListener("hashchange", change); return () => window.removeEventListener("hashchange", change); }, []);
+  const [emailLink] = useState(() => new URLSearchParams(location.hash.slice(1)));
   useEffect(() => {
     const controller = new AbortController();
-
-    fetch("/api/games", { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error("Could not load games");
-        return response.json() as Promise<Game[]>;
-      })
-      .then((data) => {
-        if (!controller.signal.aborted) {
-          setGames(data);
-        }
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-
-        setError(
-          error instanceof Error ? error.message : "Something went wrong",
-        );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
-      });
-
+    Promise.all([
+      api<Config>("/config", { signal: controller.signal }),
+      api<{ user: User }>("/auth/me", { signal: controller.signal }).catch((e: unknown) => {
+        if (e instanceof ApiError && e.status === 401) return { user: null };
+        throw e;
+      }),
+    ]).then(([settings, session]) => { setConfig(settings); setUser(session.user); setReady(true); })
+      .catch((e: unknown) => { if (!controller.signal.aborted) setError(messageOf(e)); });
     return () => controller.abort();
   }, []);
-
-  return (
-    <main>
-      <h1>Picks Club</h1>
-
-      {loading && <p role="status">Loading games...</p>}
-      {error && <p role="alert">{error}</p>}
-
-      <p>{selectedIds.length} of 8 games selected</p>
-
-      {!loading && !error && (
-        <ul className="game-list">
-          {games.map((game) => (
-            <li key={game.id} className="game-item">
-              <label className="game-option">
-                <input
-                  className="game-checkbox"
-                  type="checkbox"
-                  checked={selectedIds.includes(game.id)}
-                  disabled={
-                    selectedIds.length >= 8 && !selectedIds.includes(game.id)
-                  }
-                  onChange={() => toggleGame(game.id)}
-                />
-
-                <span className="game-card">
-                  <span className="game-matchup">
-                    {game.awayTeam} at {game.homeTeam}
-                  </span>
-
-                  <span className="game-time">
-                    {new Date(game.startDate).toLocaleString()}
-                  </span>
-
-                  <span className="game-check" aria-hidden="true">
-                    ✓
-                  </span>
-                </span>
-              </label>
-            </li>
-          ))}
-        </ul>
-      )}
-    </main>
-  );
+  async function logout() {
+    try { await api("/auth/logout", { method: "POST" }); setUser(null); setError(""); }
+    catch (e) { setError(messageOf(e)); }
+  }
+  return <main className="app-shell">
+    <header className="site-header"><a className="brand" href="/">PICKS<span> CLUB.</span></a>
+      {user && <div className="account-nav">{user.photoUrl && <img className="member-avatar" src={user.photoUrl} alt=""/>}<span>{user.name}</span><a href="#profile">My profile</a><button onClick={logout}>Sign out</button></div>}
+    </header>
+    {error && <p role="alert" className="error-banner">{error} {!ready && <button onClick={() => location.reload()}>Retry</button>}</p>}
+    {!ready && !error && <p role="status">Opening the club…</p>}
+    {emailLink.has("reset") || emailLink.has("verify") ? <AccountHelp mode={emailLink.has("reset") ? "reset" : "verify"} token={emailLink.get("reset") ?? emailLink.get("verify") ?? ""}/> : ready && config && (user ? !user.ageConfirmed ? <AgeConsent onConfirmed={setUser}/> : config.requireVerified && !user.emailVerified ? <Verification/> : profile ? <Profile user={user} onSave={setUser}/> : <Dashboard key={user.id} user={user} config={config} onProfile={setUser}/> : <AuthScreen config={config} onLogin={setUser}/>)}
+    <footer className="app-footer">Picks Club · Made for your Saturday circle.</footer>
+  </main>;
 }
+
+
