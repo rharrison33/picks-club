@@ -4,7 +4,7 @@ A sports pick’em app for competing with friends. Built step by step to practic
 
 ## Status
 
-Accounts, private pools, organizer/player views, weekly entry amounts, and eight-game lineups are implemented. Layouts adapt to mobile and desktop. Saved picks, kickoff locks, and weekly standings are implemented. Payments are not enabled. See LAUNCH.md for the pilot plan and outstanding launch gates.
+Accounts, private pools, organizer/player views, weekly entry amounts, and organizer-selected 6–12-game lineups are implemented. Layouts adapt to mobile and desktop. Saved picks, kickoff locks, total-score tiebreakers, and weekly standings are implemented. Payments are not enabled. See LAUNCH.md for the pilot plan and outstanding launch gates.
 
 ## Current features
 
@@ -12,7 +12,7 @@ Accounts, private pools, organizer/player views, weekly entry amounts, and eight
 - Create multiple private pools or join using an invitation code.
 - One or two organizers per pool, enforced on the server.
 - Set a default weekly amount per player and override it for individual Saturdays.
-- Save draft lineups, choose eight future games, and publish. Publication locks games and entry amounts.
+- Save draft lineups, choose 6–12 future games and a tiebreaker matchup, and publish. Publication locks the game count, games, tiebreaker, and entry amounts.
 - Players see published weeks; organizers have editing controls and a player preview.
 - Schedules, logos, AP ranks, records, and available odds from CollegeFootballData.
 - Suggestions prioritize ranked close matchups and each pool's favorite teams.
@@ -87,7 +87,7 @@ The first command should print `.env`; the second should not list it as an untra
 
 ## Weekly flow
 
-Choose a Saturday in the pool's timezone, review suggestions and the entry amount, save a draft, then publish exactly eight future games. Publishing locks the amount and lineup. Players save picks individually before each published kickoff. Final results score one point per outright winner; ties score zero. No payment is collected.
+The upcoming Saturday opens for organizer selection on Sunday at noon in the pool's timezone and closes at midnight Thursday (00:00 Friday). Choose a target of 6–12 games, review suggestions and the entry amount, select one of those games as the tiebreaker, and publish the complete lineup. Publishing locks the amount and lineup. Players save winner picks individually before each published kickoff and a nonnegative whole-number combined score prediction before the tiebreaker game's kickoff. Predictions include overtime and remain private until kickoff. Final results score one point per outright winner; tied games score zero. Among equally scoring players, the closest prediction wins (over or under). Missing predictions lose to submitted predictions once the final total is known. Remaining ties split the combined prize percentages for their occupied places equally; with the default 100% first-place prize, tied winners split the entire prize. Already-published weeks without a tiebreaker retain their previous shared-rank rules. No payment is collected.
 
 Amounts are stored in whole cents, from $10 to $2,500 per player. A pool's default applies to unsaved weeks; saved drafts and published weeks keep their own amount. Replacing an invitation code disables the old code without removing members.
 

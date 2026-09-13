@@ -204,6 +204,26 @@ export async function openDatabase(
           .run();
       }
     });
+    await db.transaction(async () => {
+      if (
+        !(await db
+          .prepare("SELECT 1 FROM schema_migrations WHERE version=3")
+          .get())
+      ) {
+        await db.exec(`
+          ALTER TABLE pool_weeks ADD COLUMN game_count INTEGER NOT NULL DEFAULT 8 CHECK(game_count BETWEEN 6 AND 12);
+          ALTER TABLE pool_weeks ADD COLUMN tiebreaker_game_id BIGINT;
+          CREATE TABLE tiebreaker_predictions (
+            pool_id TEXT NOT NULL, saturday TEXT NOT NULL,
+            user_id TEXT NOT NULL REFERENCES users(id),
+            total INTEGER NOT NULL CHECK(total >= 0), updated_at BIGINT NOT NULL,
+            PRIMARY KEY(pool_id,saturday,user_id),
+            FOREIGN KEY(pool_id,saturday) REFERENCES pool_weeks(pool_id,saturday)
+          );
+          INSERT INTO schema_migrations(version) VALUES (3);
+        `);
+      }
+    });
     return db;
   } catch (error) {
     await db.close();

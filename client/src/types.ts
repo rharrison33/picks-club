@@ -60,6 +60,8 @@ export type Slate = {
   week: number;
 };
 export type Week = {
+  gameCount: number;
+  tiebreakerGameId: number | null;
   saturday: string;
   feeCents: number;
   prizePercentages: number[];

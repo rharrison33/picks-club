@@ -9,7 +9,7 @@ test("lineup deadline is Friday midnight in the pool time zone", () => {
     lineupOpen(
       "2026-09-19",
       "America/Denver",
-      Date.parse("2026-09-14T16:59:59Z"),
+      Date.parse("2026-09-13T17:59:59Z"),
     ),
     false,
   );
@@ -17,7 +17,7 @@ test("lineup deadline is Friday midnight in the pool time zone", () => {
     lineupOpen(
       "2026-09-19",
       "America/Denver",
-      Date.parse("2026-09-14T17:00:00Z"),
+      Date.parse("2026-09-13T18:00:00Z"),
     ),
     true,
   );
@@ -25,7 +25,7 @@ test("lineup deadline is Friday midnight in the pool time zone", () => {
     lineupOpen(
       "2026-09-26",
       "America/Denver",
-      Date.parse("2026-09-14T17:00:00Z"),
+      Date.parse("2026-09-13T18:00:00Z"),
     ),
     false,
   );
@@ -33,7 +33,7 @@ test("lineup deadline is Friday midnight in the pool time zone", () => {
     lineupOpen(
       "2026-12-19",
       "America/Denver",
-      Date.parse("2026-12-14T17:59:59Z"),
+      Date.parse("2026-12-13T18:59:59Z"),
     ),
     false,
   );
@@ -41,7 +41,7 @@ test("lineup deadline is Friday midnight in the pool time zone", () => {
     lineupOpen(
       "2026-12-19",
       "America/Denver",
-      Date.parse("2026-12-14T18:00:00Z"),
+      Date.parse("2026-12-13T19:00:00Z"),
     ),
     true,
   );

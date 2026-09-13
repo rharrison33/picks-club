@@ -6,11 +6,140 @@ import { openDatabase } from "./database.js";
 import { tokenHash } from "./auth.js";
 import { addContestRoutes } from "./contest.js";
 import { addRecoveryRoutes } from "./recovery.js";
+
+test("tiebreaker predictions stay private, lock at kickoff, rank by distance and split remaining ties", async () => {
+  const db = await openDatabase(":memory:");
+  const date = "2099-01-03";
+  const first = Date.parse(date + "T18:00:00Z");
+  const second = first + 3600000;
+  let clock = first - 1;
+  let completed = false;
+  let total = 62;
+  for (const id of ["a", "b", "c", "d", "outsider"]) {
+    await db
+      .prepare(
+        "INSERT INTO users(id,email,name,state,password_hash) VALUES (?,?,?,?,?)",
+      )
+      .run(id, id + "@example.test", id, "", "unused");
+    await db
+      .prepare("INSERT INTO sessions VALUES (?,?,?)")
+      .run(tokenHash(id), id, Date.now() + 3600000);
+  }
+  await db.exec(
+    "INSERT INTO pools(id,name,invite_code,timezone,default_fee_cents) VALUES ('tie','Tie','tie-code','America/Denver',0)",
+  );
+  for (const id of ["a", "b", "c", "d"]) {
+    await db
+      .prepare(
+        "INSERT INTO memberships(pool_id,user_id,role) VALUES ('tie',?,'player')",
+      )
+      .run(id);
+  }
+  const games = [first, second].map((time, i) => ({
+    id: i + 1,
+    homeTeam: "Home",
+    awayTeam: "Away",
+    startDate: new Date(time).toISOString(),
+  }));
+  await db
+    .prepare(
+      "INSERT INTO pool_weeks(pool_id,saturday,fee_cents,games_json,published,tiebreaker_game_id) VALUES ('tie',?,0,?,1,2)",
+    )
+    .run(date, JSON.stringify(games));
+  const app = express();
+  app.use(express.json());
+  addContestRoutes(
+    app,
+    db,
+    async () => [
+      { id: 1, completed: true, homePoints: 21, awayPoints: 7 },
+      { id: 2, completed, homePoints: total - 20, awayPoints: 20 },
+    ],
+    () => clock,
+  );
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}/api/pools/tie/weeks/${date}`;
+  async function request(
+    path: string,
+    who: string,
+    body?: unknown,
+    expected = 200,
+  ) {
+    const response = await fetch(base + path, {
+      method: body === undefined ? "GET" : "PUT",
+      headers: {
+        Cookie: "picks_session=" + who,
+        "Content-Type": "application/json",
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const result = await response.json();
+    assert.equal(response.status, expected, JSON.stringify(result));
+    return result;
+  }
+  try {
+    await request("/tiebreaker", "outsider", { total: 40 }, 404);
+    for (const value of [-1, 1.5, "40", null, 2147483648])
+      await request("/tiebreaker", "a", { total: value }, 400);
+    for (const who of ["a", "b", "c", "d"])
+      await request("/picks", who, { gameId: 1, side: "home" });
+    await request("/tiebreaker", "a", { total: 0 });
+    await request("/tiebreaker", "a", { total: 60 });
+    await request("/tiebreaker", "b", { total: 64 });
+    await request("/tiebreaker", "c", { total: 65 });
+    const before = await request("/contest", "a");
+    assert.equal(before.tiebreaker.total, 60);
+    assert.equal(
+      before.standings.find((r: any) => r.id === "b").tiebreakerTotal,
+      null,
+    );
+    clock = first;
+    const partial = await request("/contest", "a");
+    assert.equal(partial.tiebreaker.locked, false);
+    assert.equal(
+      partial.standings.find((r: any) => r.id === "b").tiebreakerTotal,
+      null,
+    );
+    assert(partial.standings.every((r: any) => r.prizePercent === null));
+    clock = second;
+    completed = true;
+    await request("/tiebreaker", "a", { total: 62 }, 409);
+    const final = await request("/contest", "a");
+    assert.deepEqual(
+      final.standings.map((r: any) => [
+        r.id,
+        r.rank,
+        r.tiebreakerDistance,
+        r.prizePercent,
+      ]),
+      [
+        ["a", 1, 2, 50],
+        ["b", 1, 2, 50],
+        ["c", 3, 3, 0],
+        ["d", 4, null, 0],
+      ],
+    );
+    assert.equal(final.tiebreaker.actualTotal, 62);
+    total = 65;
+    const corrected = await request("/contest", "a");
+    assert.equal(corrected.standings[0].id, "c");
+    assert.equal(corrected.standings[0].prizePercent, 100);
+    assert.equal(corrected.standings[0].tiebreakerDistance, 0);
+  } finally {
+    server.close();
+    await once(server, "close");
+    await db.close();
+  }
+});
 test("pick deadlines, private choices, scoring corrections, and single-use recovery", async () => {
   const db = await openDatabase(":memory:");
   const saturday = "2099-01-03",
     kickoff = Date.parse(saturday + "T18:00:00Z");
   let clock = kickoff - 1,
+    completed = false,
     failedFeed = false,
     homePoints = 21;
   for (const id of ["alice", "bob"]) {
@@ -53,8 +182,8 @@ test("pick deadlines, private choices, scoring corrections, and single-use recov
     async () => {
       if (failedFeed) throw new Error("offline");
       return [
-        { id: 1, completed: true, homePoints, awayPoints: 14 },
-        { id: 2, completed: true, homePoints: 7, awayPoints: 7 },
+        { id: 1, completed, homePoints, awayPoints: 14 },
+        { id: 2, completed, homePoints: 7, awayPoints: 7 },
       ];
     },
     () => clock,
@@ -93,11 +222,21 @@ test("pick deadlines, private choices, scoring corrections, and single-use recov
     await request(base + "/picks", "alice", "PUT", { gameId: 2, side: "away" });
     await request(base + "/picks", "bob", "PUT", { gameId: 1, side: "away" });
     const before = await request(base + "/contest", "bob");
+    assert.equal(before.viewerId, "bob");
     assert.equal(
       before.standings.find((r: any) => r.id === "alice").picks.length,
       0,
     );
     clock = kickoff;
+    const live = await request(base + "/contest", "bob");
+    assert.equal(live.games[0].homePoints, 21);
+    assert.equal(live.games[0].completed, false);
+    assert.equal(live.standings.find((r: any) => r.id === "alice").score, 0);
+    assert.equal(
+      live.standings.find((r: any) => r.id === "alice").picks.length,
+      2,
+    );
+    completed = true;
     await request(
       base + "/picks",
       "alice",

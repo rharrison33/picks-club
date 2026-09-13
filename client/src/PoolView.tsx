@@ -33,6 +33,7 @@ export default function PoolView({
     return () => clearInterval(timer);
   }, []);
   const [preview, setPreview] = useState(false);
+  const [view, setView] = useState<"day" | "manage" | null>(null);
   const requested = new URLSearchParams(location.search).get("week");
   const date =
     !organizer &&
@@ -46,14 +47,20 @@ export default function PoolView({
   const [week, setWeek] = useState<Week | null>(null);
   const [slate, setSlate] = useState<Slate | null>(null);
   const [ids, setIds] = useState<number[]>([]);
+  const [gameCount, setGameCount] = useState(8);
+  const [tiebreakerGameId, setTiebreakerGameId] = useState<number | null>(null);
+  const selectedTiebreaker =
+    tiebreakerGameId !== null && ids.includes(tiebreakerGameId)
+      ? tiebreakerGameId
+      : null;
   const [newSelection, setNewSelection] = useState<number | null>(null);
   const selectionPrompt = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (ids.length > 8) {
+    if (ids.length > gameCount) {
       selectionPrompt.current?.focus({ preventScroll: true });
       selectionPrompt.current?.scrollIntoView({ block: "center" });
     }
-  }, [ids.length, newSelection]);
+  }, [ids.length, newSelection, gameCount]);
   const [amount, setAmount] = useState("");
   const [sort, setSort] = useState("pool");
   const [teamSearch, setTeamSearch] = useState("");
@@ -73,6 +80,8 @@ export default function PoolView({
         setWeek(r.week);
         setAmount((r.week.feeCents / 100).toFixed(2));
         setIds(r.week.games.map((g) => g.id));
+        setGameCount(r.week.gameCount);
+        setTiebreakerGameId(r.week.tiebreakerGameId);
         if (organizer && !r.week.published && windowOpen) {
           const data = await api<Slate>(base + "/games?date=" + date, {
             signal: controller.signal,
@@ -108,13 +117,13 @@ export default function PoolView({
   async function save(publish: boolean) {
     if (!lineupOpen(date, pool.timezone)) {
       setError(
-        "Lineup selection is open Monday at 11 a.m. through Thursday night.",
+        "Lineup selection is open Sunday at noon through Thursday night.",
       );
       return;
     }
-    if (ids.length > 8) {
+    if (ids.length > gameCount) {
       setError(
-        `Deselect ${ids.length - 8} game${ids.length - 8 === 1 ? "" : "s"} before saving or publishing.`,
+        `Deselect ${ids.length - gameCount} game${ids.length - gameCount === 1 ? "" : "s"} before saving or publishing.`,
       );
       return;
     }
@@ -127,6 +136,8 @@ export default function PoolView({
         body: JSON.stringify({
           feeCents: parseFee(amount),
           gameIds: ids,
+          gameCount,
+          tiebreakerGameId: selectedTiebreaker,
           publish,
         }),
       });
@@ -205,6 +216,48 @@ export default function PoolView({
   const selectedGames = ids.flatMap((id) =>
     games.filter((game) => game.id === id),
   );
+  const saturdayToday =
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: pool.timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(clock) === date;
+  const showGameDay =
+    week?.published && (view === "day" || (view === null && saturdayToday));
+  const viewSwitch = week?.published && (
+    <div className="view-tabs" aria-label="Pool view">
+      <button
+        aria-pressed={Boolean(showGameDay)}
+        onClick={() => setView("day")}
+      >
+        Game day
+      </button>
+      <button aria-pressed={!showGameDay} onClick={() => setView("manage")}>
+        {organizer ? "Picks & pool settings" : "Picks & pool details"}
+      </button>
+    </div>
+  );
+  if (showGameDay)
+    return (
+      <>
+        <div className="pool-title">
+          <div>
+            <p className="eyebrow">SATURDAY AT THE CLUB · {date}</p>
+            <h2>{pool.name}</h2>
+          </div>
+          <span className="role-badge">{pool.role}</span>
+        </div>
+        {viewSwitch}
+        <Picks
+          key={pool.id + date}
+          poolId={pool.id}
+          date={date}
+          timezone={pool.timezone}
+          gameDay
+        />
+      </>
+    );
   return (
     <>
       <div className="pool-title">
@@ -217,6 +270,7 @@ export default function PoolView({
         </div>
         <span className="role-badge">{pool.role}</span>
       </div>
+      {viewSwitch}
       {organizer && (
         <div className="view-tabs">
           <button aria-pressed={!preview} onClick={() => setPreview(false)}>
@@ -231,7 +285,7 @@ export default function PoolView({
         <div>
           <strong>Saturday, {date}</strong>
           <p className="muted">
-            Lineup selection: Monday 11 a.m. through Thursday midnight ·{" "}
+            Lineup selection: Sunday noon through Thursday midnight ·{" "}
             {pool.timezone.replaceAll("_", " ")}
           </p>
         </div>
@@ -250,7 +304,7 @@ export default function PoolView({
         <section className="panel">
           <h3>Lineup selection is closed</h3>
           <p>
-            Weekly matchups open Monday at 11 a.m. in your pool's time zone,
+            Weekly matchups open Sunday at noon in your pool's time zone,
             allowing time for spreads to become available. Finalize your lineup
             by Thursday night at midnight (00:00 Friday).
           </p>
@@ -277,14 +331,52 @@ export default function PoolView({
             <section className="panel weekly-editor">
               <div>
                 <p className="eyebrow">BUILD THIS WEEK</p>
-                <h3>{ids.length} / 8 games selected</h3>
+                <h3>
+                  {ids.length} / {gameCount} games selected
+                </h3>
                 <p className="muted">
                   Suggestions favor ranked, close matchups and your members'
                   favorite teams. Adjust the lineup before publishing.
                 </p>
               </div>
               <fieldset disabled={busy}>
+                <label>
+                  Number of games
+                  <select
+                    value={gameCount}
+                    onChange={(e) => setGameCount(Number(e.target.value))}
+                  >
+                    {[6, 7, 8, 9, 10, 11, 12].map((n) => (
+                      <option key={n} value={n}>
+                        {n} games
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <EntryAmount value={amount} onChange={setAmount} />
+                <label>
+                  Tiebreaker game
+                  <select
+                    value={selectedTiebreaker ?? ""}
+                    onChange={(e) =>
+                      setTiebreakerGameId(
+                        e.target.value === "" ? null : Number(e.target.value),
+                      )
+                    }
+                  >
+                    <option value="">Choose one of your selected games</option>
+                    {selectedGames.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.awayTeam} at {g.homeTeam}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <small>
+                  Players predict the combined final score, including overtime.
+                  Closest total breaks ties; equal differences split the tied
+                  prizes evenly. Choose a tiebreaker before publishing.
+                </small>
               </fieldset>
               <p className="muted">
                 Prize split:{" "}
@@ -298,26 +390,28 @@ export default function PoolView({
                   disabled={busy || !slate}
                   onClick={() =>
                     setIds(
-                      slate?.suggestedIds.filter((id) =>
-                        games.some(
-                          (g) =>
-                            g.id === id && Date.parse(g.startDate) > Date.now(),
-                        ),
-                      ) ?? [],
+                      ordered
+                        .filter((g) => Date.parse(g.startDate) > Date.now())
+                        .slice(0, gameCount)
+                        .map((g) => g.id),
                     )
                   }
                 >
-                  Use suggested eight
+                  Use suggested {gameCount}
                 </button>
                 <button
-                  disabled={busy || ids.length > 8}
+                  disabled={busy || ids.length > gameCount}
                   onClick={() => save(false)}
                 >
                   Save draft
                 </button>
                 <button
                   className="primary"
-                  disabled={busy || ids.length !== 8}
+                  disabled={
+                    busy ||
+                    ids.length !== gameCount ||
+                    selectedTiebreaker === null
+                  }
                   onClick={() => save(true)}
                 >
                   {busy ? "Saving…" : "Publish week"}
@@ -384,7 +478,9 @@ export default function PoolView({
             <>
               <div className="board-heading">
                 <h3>
-                  {week.published ? "This week's eight" : "Saturday lineup"}
+                  {week.published
+                    ? `This week's ${week.games.length} games`
+                    : "Saturday lineup"}
                 </h3>
                 {editingLineup && (
                   <label>
@@ -437,7 +533,7 @@ export default function PoolView({
                   )}
                 </div>
               )}
-              {editingLineup && ids.length > 8 && (
+              {editingLineup && ids.length > gameCount && (
                 <div
                   ref={selectionPrompt}
                   tabIndex={-1}
@@ -445,8 +541,8 @@ export default function PoolView({
                   role="alert"
                 >
                   <strong>
-                    {ids.length} games selected — deselect {ids.length - 8} to
-                    get back to eight.
+                    {ids.length} games selected — deselect{" "}
+                    {ids.length - gameCount} to get back to {gameCount}.
                   </strong>
                   <p>
                     Your new matchup is selected. Choose an existing game to
@@ -530,7 +626,10 @@ export default function PoolView({
                     aria-label="Selected lineup"
                   >
                     <h3>
-                      Your lineup <span>{ids.length}/8</span>
+                      Your lineup{" "}
+                      <span>
+                        {ids.length}/{gameCount}
+                      </span>
                     </h3>
                     <p className="muted">
                       Remove a matchup to return it to the available options.

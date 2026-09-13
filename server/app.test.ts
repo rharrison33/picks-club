@@ -9,7 +9,7 @@ test("accounts, private pools, role boundaries and immutable weekly publication"
   const db = await openDatabase(":memory:");
   const date = "2099-01-03";
   const games = enrichGames(
-    Array.from({ length: 8 }, (_, i) => ({
+    Array.from({ length: 12 }, (_, i) => ({
       id: i + 1,
       homeTeam: "Home " + i,
       awayTeam: "Away " + i,
@@ -399,6 +399,34 @@ test("accounts, private pools, role boundaries and immutable weekly publication"
     assert.equal((await request(weekPath, c.cookie)).data.week.games.length, 0);
     await request(weekPath, a.cookie, "PUT", { ...draft, publish: true }, 400);
     await request(weekPath, a.cookie, "PUT", { ...draft, gameIds: [999] }, 400);
+    for (const gameCount of [5, 13, 6.5]) {
+      await request(weekPath, a.cookie, "PUT", { ...draft, gameCount }, 400);
+    }
+    for (const gameCount of [6, 12]) {
+      const saved = await request(weekPath, a.cookie, "PUT", {
+        ...draft,
+        gameCount,
+        gameIds: games.slice(0, gameCount).map((g) => g.id),
+        tiebreakerGameId: 1,
+      });
+      assert.equal(saved.data.week.gameCount, gameCount);
+      assert.equal(saved.data.week.games.length, gameCount);
+      assert.equal(saved.data.week.tiebreakerGameId, 1);
+    }
+    await request(
+      weekPath,
+      a.cookie,
+      "PUT",
+      { ...draft, tiebreakerGameId: 12 },
+      400,
+    );
+    await request(
+      weekPath,
+      a.cookie,
+      "PUT",
+      { ...draft, gameIds: games.slice(0, 8).map((g) => g.id), publish: true },
+      400,
+    );
     await request(
       weekPath,
       a.cookie,
@@ -408,7 +436,8 @@ test("accounts, private pools, role boundaries and immutable weekly publication"
     );
     await request(weekPath, a.cookie, "PUT", {
       ...draft,
-      gameIds: games.map((g) => g.id),
+      gameIds: games.slice(0, 8).map((g) => g.id),
+      tiebreakerGameId: 1,
       publish: true,
     });
     const published = (await request(weekPath, c.cookie)).data.week;

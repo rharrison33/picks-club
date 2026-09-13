@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { api, messageOf } from "./api";
 import type { Game } from "./types";
-type ContestGame = Game & {
+import SaturdayBoard from "./SaturdayBoard";
+import Tiebreaker from "./Tiebreaker";
+export type ContestGame = Game & {
   locked: boolean;
   completed: boolean;
   winner: "home" | "away" | null;
@@ -10,7 +12,14 @@ type ContestGame = Game & {
   awayPoints: number | null;
   checkedAt: number | null;
 };
-type Contest = {
+export type Contest = {
+  tiebreaker: {
+    gameId: number;
+    locked: boolean;
+    total: number | null;
+    actualTotal: number | null;
+  } | null;
+  viewerId: string;
   serverTime: number;
   games: ContestGame[];
   feedUnavailable: boolean;
@@ -21,6 +30,8 @@ type Contest = {
     rank: number | null;
     score: number;
     prizePercent: number | null;
+    tiebreakerTotal: number | null;
+    tiebreakerDistance: number | null;
     picks: { gameId: number; side: string }[];
   }[];
 };
@@ -28,10 +39,12 @@ export default function Picks({
   poolId,
   date,
   timezone,
+  gameDay = false,
 }: {
   poolId: string;
   date: string;
   timezone: string;
+  gameDay?: boolean;
 }) {
   const [contest, setContest] = useState<Contest | null>(null);
   const [error, setError] = useState("");
@@ -67,12 +80,17 @@ export default function Picks({
       }
     }
     void load();
+    const resume = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", resume);
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") void load();
     }, 30_000);
     return () => {
       controller.abort();
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", resume);
     };
   }, [base, revision]);
   async function choose(game: ContestGame, side: "home" | "away") {
@@ -111,13 +129,39 @@ export default function Picks({
     minute: "2-digit",
     timeZoneName: "short",
   });
+  if (gameDay) {
+    return (
+      <SaturdayBoard
+        tiebreakerPanel={
+          contest && (
+            <Tiebreaker
+              key={base}
+              contest={contest}
+              base={base}
+              onSaved={() => setRevision((v) => v + 1)}
+            />
+          )
+        }
+        contest={contest}
+        error={error}
+        notice={notice}
+        saving={saving}
+        timezone={timezone}
+        onChoose={choose}
+        onRefresh={() => setRevision((v) => v + 1)}
+      />
+    );
+  }
   return (
     <section className="picks-section">
       <div className="board-heading">
         <h3>
           Your picks{" "}
           {contest && (
-            <small>{contest.games.filter((g) => g.pick).length}/8 saved</small>
+            <small>
+              {contest.games.filter((g) => g.pick).length}/
+              {contest.games.length} saved
+            </small>
           )}
         </h3>
         <button onClick={() => setRevision((v) => v + 1)}>
@@ -141,6 +185,12 @@ export default function Picks({
       {!contest && !error && <p role="status">Loading picks…</p>}
       {contest && (
         <>
+          <Tiebreaker
+            key={base}
+            contest={contest}
+            base={base}
+            onSaved={() => setRevision((v) => v + 1)}
+          />
           {contest.feedUnavailable && (
             <p role="status" className="error-banner">
               The results feed is unavailable. Showing the last saved results;
@@ -207,7 +257,15 @@ export default function Picks({
                   <strong>
                     {row.rank === null ? "Not entered" : "#" + row.rank}
                   </strong>
-                  <span>{row.name}</span>
+                  <span>
+                    {row.name}
+                    {row.tiebreakerDistance !== null && (
+                      <small>
+                        {" "}
+                        · Tiebreaker off by {row.tiebreakerDistance}
+                      </small>
+                    )}
+                  </span>
                   <strong>
                     {row.score} pts
                     {row.prizePercent !== null && (

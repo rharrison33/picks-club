@@ -10,6 +10,7 @@ type Game = {
   startDate: string;
 };
 type StoredWeek = {
+  tiebreaker_game_id: number | null;
   games_json: string;
   published: number;
   prizes_json: string;
@@ -62,6 +63,7 @@ export function addContestRoutes(
       date,
       user,
       games: JSON.parse(week.games_json) as Game[],
+      tiebreakerGameId: week.tiebreaker_game_id,
       prizePercentages: JSON.parse(week.prizes_json) as number[],
     };
   }
@@ -97,6 +99,41 @@ export function addContestRoutes(
         .run(ctx.pool, ctx.date, ctx.user.id, game.id, side, timestamp);
     });
     res.json({ gameId, side, savedAt: timestamp });
+  });
+  app.put("/api/pools/:id/weeks/:date/tiebreaker", auth, async (req, res) => {
+    const ctx = await context(req, res);
+    if (!ctx) return;
+    const game = ctx.games.find((g) => g.id === ctx.tiebreakerGameId);
+    const total = req.body?.total;
+    if (!game) {
+      res.status(409).json({ error: "This week has no tiebreaker game." });
+      return;
+    }
+    if (!Number.isInteger(total) || total < 0 || total > 2147483647) {
+      res
+        .status(400)
+        .json({ error: "Enter a nonnegative whole-number total score." });
+      return;
+    }
+    const saved = await transaction(db, async () => {
+      const final = await db
+        .prepare("SELECT completed FROM game_results WHERE game_id=?")
+        .get(game.id);
+      if (now() >= Date.parse(game.startDate) || final?.completed === 1)
+        return false;
+      await db
+        .prepare(
+          `INSERT INTO tiebreaker_predictions(pool_id,saturday,user_id,total,updated_at) VALUES (?,?,?,?,?)
+        ON CONFLICT(pool_id,saturday,user_id) DO UPDATE SET total=excluded.total,updated_at=excluded.updated_at`,
+        )
+        .run(ctx.pool, ctx.date, ctx.user.id, total, now());
+      return true;
+    });
+    if (!saved) {
+      res.status(409).json({ error: "The tiebreaker prediction is locked." });
+      return;
+    }
+    res.json({ total });
   });
   app.get("/api/pools/:id/weeks/:date/contest", auth, async (req, res) => {
     const ctx = await context(req, res);
@@ -174,12 +211,34 @@ export function addContestRoutes(
       id: string;
       name: string;
     }[];
+    const predictions = await db
+      .prepare(
+        "SELECT user_id,total FROM tiebreaker_predictions WHERE pool_id=? AND saturday=?",
+      )
+      .all(ctx.pool, ctx.date);
+    const tiebreakerGame = games.find((g) => g.id === ctx.tiebreakerGameId);
+    const actualTotal =
+      tiebreakerGame?.completed &&
+      tiebreakerGame.homePoints !== null &&
+      tiebreakerGame.awayPoints !== null
+        ? tiebreakerGame.homePoints + tiebreakerGame.awayPoints
+        : null;
     const standings = members
       .map((member) => {
         const own = picks.filter((p) => p.user_id === member.id);
+        const prediction = predictions.find((p) => p.user_id === member.id)
+          ?.total as number | undefined;
         return {
           ...member,
           entered: own.length > 0,
+          tiebreakerTotal:
+            tiebreakerGame?.locked || member.id === ctx.user.id
+              ? (prediction ?? null)
+              : null,
+          tiebreakerDistance:
+            actualTotal !== null && prediction !== undefined
+              ? Math.abs(prediction - actualTotal)
+              : null,
           score: games.filter(
             (g) =>
               g.winner &&
@@ -197,19 +256,47 @@ export function addContestRoutes(
       .sort(
         (a, b) =>
           b.score - a.score ||
+          ((a.tiebreakerDistance ?? Infinity) ===
+          (b.tiebreakerDistance ?? Infinity)
+            ? 0
+            : (a.tiebreakerDistance ?? Infinity) <
+                (b.tiebreakerDistance ?? Infinity)
+              ? -1
+              : 1) ||
           a.name.localeCompare(b.name) ||
           a.id.localeCompare(b.id),
       );
     const complete = games.every((g) => g.completed);
     res.json({
+      viewerId: ctx.user.id,
+      tiebreaker: tiebreakerGame
+        ? {
+            gameId: tiebreakerGame.id,
+            locked: tiebreakerGame.locked,
+            total:
+              predictions.find((p) => p.user_id === ctx.user.id)?.total ?? null,
+            actualTotal,
+          }
+        : null,
       serverTime: now(),
       games,
       feedUnavailable,
       standings: standings.map((row) => {
         const rank =
-          1 + standings.filter((r) => r.entered && r.score > row.score).length;
+          1 +
+          standings.filter(
+            (r) =>
+              r.entered &&
+              (r.score > row.score ||
+                (r.score === row.score &&
+                  (r.tiebreakerDistance ?? Infinity) <
+                    (row.tiebreakerDistance ?? Infinity))),
+          ).length;
         const tied = standings.filter(
-          (r) => r.entered && r.score === row.score,
+          (r) =>
+            r.entered &&
+            r.score === row.score &&
+            r.tiebreakerDistance === row.tiebreakerDistance,
         ).length;
         const prizePercent =
           complete && row.entered
@@ -220,7 +307,11 @@ export function addContestRoutes(
         return { ...row, rank: row.entered ? rank : null, prizePercent };
       }),
       rules:
-        "One point per outright winner. Each pick locks at its published kickoff. Tied games score zero. Tied players share a rank. Unresolved games remain pending.",
+        "One point per outright winner. Each pick locks at its published kickoff. Tied games score zero. " +
+        (tiebreakerGame
+          ? "Tied players are ranked by the smallest difference from the tiebreaker game's final combined score, including overtime. Going over is allowed. Missing predictions rank after submitted predictions. Remaining ties share the combined prizes for their occupied places equally. "
+          : "Tied players share a rank and split the combined prizes for their occupied places equally. ") +
+        "Unresolved games remain pending.",
     });
   });
 }

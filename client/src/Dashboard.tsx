@@ -91,18 +91,41 @@ export default function Dashboard({
     }
   }
   const selected = active ? pools.find((p) => p.id === active) : pools[0];
+  const saturday =
+    selected &&
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: selected.timezone,
+      weekday: "short",
+    }).format(new Date()) === "Sat";
   return (
     <>
-      <section className="dashboard-intro">
-        <p className="eyebrow">YOUR SATURDAY STARTS HERE</p>
-        <h1>
-          My club<span>.</span>
-        </h1>
-        <p className="muted">
-          Different circles. Different rivalries. One place to bring everyone
-          together.
-        </p>
-      </section>
+      {!saturday && (
+        <section className="dashboard-intro">
+          <p className="eyebrow">YOUR SATURDAY STARTS HERE</p>
+          <h1>
+            My club<span>.</span>
+          </h1>
+          <p className="muted">
+            Different circles. Different rivalries. One place to bring everyone
+            together.
+          </p>
+        </section>
+      )}
+      {saturday && (
+        <label className="saturday-pool-switch">
+          Your pool
+          <select
+            value={selected.id}
+            onChange={(event) => setActive(event.target.value)}
+          >
+            {pools.map((pool) => (
+              <option key={pool.id} value={pool.id}>
+                {pool.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {error && (
         <p role="alert" className="error-banner">
           {error}
@@ -113,7 +136,7 @@ export default function Dashboard({
           {notice}
         </p>
       )}
-      <div className="dashboard-grid">
+      <div className={`dashboard-grid ${saturday ? "dashboard-saturday" : ""}`}>
         <aside className="club-sidebar">
           <section className="panel">
             <h2>

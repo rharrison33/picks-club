@@ -6,8 +6,8 @@ export function lineupOpen(
 ) {
   const friday = new Date(saturday + "T12:00:00Z");
   friday.setUTCDate(friday.getUTCDate() - 1);
-  const monday = new Date(saturday + "T12:00:00Z");
-  monday.setUTCDate(monday.getUTCDate() - 5);
+  const sunday = new Date(saturday + "T12:00:00Z");
+  sunday.setUTCDate(sunday.getUTCDate() - 6);
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
     year: "numeric",
@@ -20,7 +20,7 @@ export function lineupOpen(
   const part = (name: string) => parts.find((p) => p.type === name)!.value;
   const local = `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
   return (
-    local >= monday.toISOString().slice(0, 10) + "T11:00" &&
+    local >= sunday.toISOString().slice(0, 10) + "T12:00" &&
     local < friday.toISOString().slice(0, 10) + "T00:00"
   );
 }

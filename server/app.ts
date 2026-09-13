@@ -49,6 +49,8 @@ type Pool = {
   role: "organizer" | "player";
 };
 type Week = {
+  game_count: number;
+  tiebreaker_game_id: number | null;
   pool_id: string;
   saturday: string;
   fee_cents: number;
@@ -639,6 +641,8 @@ export function createApp(
     const published = week?.published === 1;
     return {
       saturday,
+      gameCount: week?.game_count ?? 8,
+      tiebreakerGameId: week?.tiebreaker_game_id ?? null,
       feeCents: week?.fee_cents ?? pool.default_fee_cents,
       prizePercentages: JSON.parse(week?.prizes_json ?? pool.prizes_json),
       published,
@@ -660,7 +664,7 @@ export function createApp(
     check(isSaturday(req.query.date), "Choose a Saturday.");
     check(
       lineupOpen(req.query.date, pool.timezone, now()),
-      "Lineup selection is available Monday at 11 a.m. through Thursday night in your pool's time zone.",
+      "Lineup selection is available Sunday at noon through Thursday night in your pool's time zone.",
       409,
     );
     const favoritesByMember = (await db
@@ -684,25 +688,41 @@ export function createApp(
     check(isSaturday(saturday), "Choose a Saturday.");
     check(
       lineupOpen(saturday, pool.timezone, now()),
-      "Lineup selection is available Monday at 11 a.m. through Thursday night in your pool's time zone.",
+      "Lineup selection is available Sunday at noon through Thursday night in your pool's time zone.",
       409,
     );
     cents(req.body?.feeCents);
     const ids: unknown = req.body?.gameIds;
+    const gameCount = req.body?.gameCount ?? 8;
+    const tiebreakerGameId = req.body?.tiebreakerGameId ?? null;
+    check(
+      Number.isInteger(gameCount) && gameCount >= 6 && gameCount <= 12,
+      "Choose between 6 and 12 games.",
+    );
     check(
       Array.isArray(ids) &&
-        ids.length <= 8 &&
+        ids.length <= gameCount &&
         ids.every(Number.isSafeInteger) &&
         new Set(ids).size === ids.length,
-      "Choose up to eight different games.",
+      `Choose up to ${gameCount} different games.`,
     );
     check(
       typeof req.body?.publish === "boolean",
       "Specify whether to publish.",
     );
     check(
-      !req.body.publish || ids.length === 8,
-      "Choose exactly eight games before publishing.",
+      !req.body.publish || ids.length === gameCount,
+      `Choose exactly ${gameCount} games before publishing.`,
+    );
+    check(
+      tiebreakerGameId === null ||
+        (Number.isSafeInteger(tiebreakerGameId) &&
+          ids.includes(tiebreakerGameId)),
+      "Choose a tiebreaker from the selected games.",
+    );
+    check(
+      !req.body.publish || tiebreakerGameId !== null,
+      "Select a tiebreaker game before publishing.",
     );
     // Entry configuration is available for planning; real-money checkout is not activated.
     if (
@@ -741,7 +761,7 @@ export function createApp(
       await member(pool.id, user(res).id, true); // Recheck after awaiting the external feed.
       check(
         lineupOpen(saturday, pool.timezone, now()),
-        "Lineup selection is available Monday at 11 a.m. through Thursday night in your pool's time zone.",
+        "Lineup selection is available Sunday at noon through Thursday night in your pool's time zone.",
         409,
       );
       const existing = (await db
@@ -758,8 +778,8 @@ export function createApp(
       );
       await db
         .prepare(
-          `INSERT INTO pool_weeks(pool_id,saturday,fee_cents,games_json,published,prizes_json) VALUES (?,?,?,?,?,?)
-        ON CONFLICT(pool_id,saturday) DO UPDATE SET fee_cents=excluded.fee_cents,games_json=excluded.games_json,published=excluded.published,prizes_json=excluded.prizes_json,updated_at=CURRENT_TIMESTAMP`,
+          `INSERT INTO pool_weeks(pool_id,saturday,fee_cents,games_json,published,prizes_json,game_count,tiebreaker_game_id) VALUES (?,?,?,?,?,?,?,?)
+        ON CONFLICT(pool_id,saturday) DO UPDATE SET fee_cents=excluded.fee_cents,games_json=excluded.games_json,published=excluded.published,prizes_json=excluded.prizes_json,game_count=excluded.game_count,tiebreaker_game_id=excluded.tiebreaker_game_id,updated_at=CURRENT_TIMESTAMP`,
         )
         .run(
           pool.id,
@@ -768,6 +788,8 @@ export function createApp(
           JSON.stringify(selected),
           req.body.publish ? 1 : 0,
           pool.prizes_json,
+          gameCount,
+          tiebreakerGameId,
         );
     });
     res.json({ week: await readWeek(pool, saturday) });

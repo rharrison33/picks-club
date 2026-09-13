@@ -13,6 +13,8 @@ npm run dev --prefix server
 
 The initial schema is applied transactionally on startup and recorded in `schema_migrations`. The health endpoint checks the database connection. Missing database configuration fails startup; it never falls back to SQLite.
 
+Migration 3 adds each week's target game count and tiebreaker game, plus the `tiebreaker_predictions` table. Existing weeks default to eight games with no tiebreaker, preserving their published rules. Subsequent schema changes must use a new migration rather than editing an applied migration. Test against a separate database and back up production before deploying schema changes; reverting app code does not reverse a migration.
+
 On the original Windows development machine, a private cluster was created in `.data/postgres`, bound to `127.0.0.1:55432`, with a random password saved in `.env`. Start it after a reboot with:
 
 ```powershell
