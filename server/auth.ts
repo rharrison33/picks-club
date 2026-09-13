@@ -2,7 +2,22 @@ import { randomBytes, createHash, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import type { Database } from "./database.js";
 import type { Request, Response, NextFunction } from "express";
+import { requestLimit } from "./abuse.js";
 const derive = promisify(scrypt);
+let hashing = 0;
+async function boundedDerive(password: string, salt: string) {
+  if (hashing >= 4)
+    throw Object.assign(
+      new Error("Sign-in is busy. Please try again shortly."),
+      { status: 503 },
+    );
+  hashing++;
+  try {
+    return (await derive(password, salt, 64)) as Buffer;
+  } finally {
+    hashing--;
+  }
+}
 export type User = {
   id: string;
   email: string;
@@ -17,12 +32,12 @@ export const tokenHash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 export async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
-  const hash = (await derive(password, salt, 64)) as Buffer;
+  const hash = await boundedDerive(password, salt);
   return `${salt}:${hash.toString("hex")}`;
 }
 export async function verifyPassword(password: string, stored: string) {
   const [salt, encoded] = stored.split(":");
-  const hash = (await derive(password, salt, 64)) as Buffer;
+  const hash = await boundedDerive(password, salt);
   const expected = Buffer.from(encoded, "hex");
   return hash.length === expected.length && timingSafeEqual(hash, expected);
 }
@@ -90,28 +105,5 @@ export function requireUser(db: Database) {
 }
 // Bounds password-hash work and login guessing; no raw credentials are logged/stored here.
 export function authLimiter() {
-  const attempts = new Map<
-    string,
-    {
-      count: number;
-      until: number;
-    }
-  >();
-  return (req: Request, res: Response, next: NextFunction) => {
-    const now = Date.now();
-    for (const [key, entry] of attempts)
-      if (entry.until <= now) attempts.delete(key);
-    const key = req.ip ?? "unknown";
-    const entry = attempts.get(key) ?? { count: 0, until: now + 15 * 60000 };
-    entry.count++;
-    attempts.set(key, entry);
-    if (entry.count > 30) {
-      res.setHeader("Retry-After", Math.ceil((entry.until - now) / 1000));
-      res
-        .status(429)
-        .json({ error: "Too many attempts. Try again in 15 minutes." });
-      return;
-    }
-    next();
-  };
+  return requestLimit(30, 15 * 60_000);
 }

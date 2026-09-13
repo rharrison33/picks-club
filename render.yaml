@@ -4,6 +4,7 @@ services:
     runtime: docker
     plan: 0.5c-512mb
     region: oregon
+    numInstances: 1
     autoDeployTrigger: checksPass
     healthCheckPath: /api/health
     envVars:

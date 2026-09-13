@@ -48,7 +48,7 @@ After approval: implement verified payment webhooks, idempotency, paid-entry eli
 
 Proposed pilot: one Render paid web service with a managed Postgres database, plus Resend and a domain you own. Render offers a service URL for the pilot; email requires a verified sending domain. Review current costs before purchasing: [Render pricing](https://render.com/pricing), [managed Postgres](https://render.com/docs/postgresql-creating-connecting), [Resend documentation](https://resend.com/docs/introduction).
 
-1. Create the hosting and email accounts and register the preferred domain, picks-club.com, if available at purchase time. No accounts, subscriptions, or domain have been purchased by this work.
+1. The owner purchased picks-club.com through Namecheap and signed in to Render. Finish hosting billing and email account setup; connect the domain using Render's DNS instructions.
 2. Verify your sending domain in Resend and obtain a restricted sending key.
 3. Push the reviewed repository changes, then create a Render Blueprint from render.yaml.
 4. Set APP_ORIGIN to the exact HTTPS site origin, EMAIL_FROM to a verified sender, RESEND_API_KEY, CFBD_API_KEY, and PILOT_ORGANIZER_EMAILS to your organizer email(s).
@@ -120,7 +120,7 @@ Code rollback: redeploy the previous reviewed revision while keeping the disk. B
 
 Registration and profile editing use 1–5 favorite teams from the CFBD team catalog. State is no longer requested or used for recommendations. Older accounts start with no favorites and can add them in My profile; old database state values are retained only for migration compatibility and are not exposed in the account/member API.
 
-Preferred domain: picks-club.com. It has not been purchased or connected. Use its actual HTTPS origin after ownership/DNS setup; do not send links to an unowned domain.
+Domain: picks-club.com, purchased by the owner through Namecheap. DNS connection is still pending. Use https://picks-club.com as APP_ORIGIN once the Render custom domain is verified.
 
 Saturday SMS:
 

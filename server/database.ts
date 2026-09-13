@@ -156,6 +156,8 @@ export async function openDatabase(
       connectionString: url,
       max: 10,
       connectionTimeoutMillis: 10_000,
+      statement_timeout: 10_000,
+      idle_in_transaction_session_timeout: 15_000,
       types: {
         getTypeParser: (oid, format) =>
           oid === 20
@@ -185,6 +187,20 @@ export async function openDatabase(
         );
         await db
           .prepare("INSERT INTO schema_migrations(version) VALUES (1)")
+          .run();
+      }
+    });
+    await db.transaction(async () => {
+      if (
+        !(await db
+          .prepare("SELECT 1 FROM schema_migrations WHERE version=2")
+          .get())
+      ) {
+        await db.exec(
+          "CREATE TABLE outbound_usage (scope TEXT NOT NULL, period TEXT NOT NULL, used INTEGER NOT NULL, PRIMARY KEY(scope, period))",
+        );
+        await db
+          .prepare("INSERT INTO schema_migrations(version) VALUES (2)")
           .run();
       }
     });

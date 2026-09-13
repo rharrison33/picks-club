@@ -1,6 +1,7 @@
 import { createApp } from "./app.js";
 import { openDatabase } from "./database.js";
 import { pollSaturdayUpdates } from "./sms.js";
+import { configureSportsBudget } from "./sports.js";
 if (
   process.env.NODE_ENV === "production" &&
   (!process.env.APP_ORIGIN?.startsWith("https://") ||
@@ -13,6 +14,7 @@ if (
   );
 }
 const db = await openDatabase();
+configureSportsBudget(db);
 const app = createApp(db);
 let polling = false;
 const poll = async () => {
@@ -39,6 +41,10 @@ const server = app.listen(
     console.log("Picks Club API running on port " + port);
   },
 );
+server.requestTimeout = 15_000;
+server.headersTimeout = 10_000;
+server.keepAliveTimeout = 5_000;
+server.maxRequestsPerSocket = 100;
 for (const signal of ["SIGTERM", "SIGINT"] as const)
   process.on(signal, () => {
     clearInterval(resultTimer);

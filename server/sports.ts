@@ -1,6 +1,13 @@
 import { suggestGames, type Game, type PollWeek } from "./selection.js";
 import { chooseOdds, type BettingGame } from "./odds.js";
 import { enrichGames, type Team, type TeamRecord } from "./team-details.js";
+import type { Database } from "./database.js";
+import { reserveUsage } from "./usage.js";
+
+let usageDb: Database | undefined;
+export function configureSportsBudget(db: Database) {
+  usageDb = db;
+}
 
 const cache = new Map<string, { expires: number; data: Promise<unknown[]> }>();
 async function feed<T>(
@@ -14,6 +21,12 @@ async function feed<T>(
   const data = (async () => {
     const key = process.env.CFBD_API_KEY;
     if (!key) throw new Error("CFBD_API_KEY is not configured.");
+    if (!usageDb) throw new Error("Sports request budget is not configured.");
+    const date = new Date().toISOString();
+    await reserveUsage(usageDb, [
+      { scope: "sports-day", period: date.slice(0, 10), limit: 300 },
+      { scope: "sports-month", period: date.slice(0, 7), limit: 900 },
+    ]);
     const response = await fetch(
       "https://api.collegefootballdata.com/" + path,
       {
@@ -28,14 +41,13 @@ async function feed<T>(
       throw new Error("Invalid sports data response.");
     return payload as T[];
   })().catch((error) => {
-    cache.delete(path);
+    // Keep failed requests cached too, so an outage cannot trigger a retry storm.
+    const entry = cache.get(path);
+    if (entry) entry.expires = Date.now() + 60_000;
     if (required) throw error;
-    cache.set(path, {
-      expires: Date.now() + 60_000,
-      data: Promise.resolve([]),
-    });
     return [] as T[];
   });
+  if (cache.size >= 256) cache.delete(cache.keys().next().value!);
   cache.set(path, { expires: Date.now() + ttl, data });
   return data;
 }

@@ -61,6 +61,6 @@ Transactions use one checked-out connection, with context-local queries and roll
 2. Create a Blueprint from `render.yaml`. Review the displayed web-service and database costs before provisioning.
 3. Set `APP_ORIGIN`, `CFBD_API_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, and the pilot organizer email. The database URL is supplied automatically. Keep secrets in Render's environment settings.
 4. Verify email delivery, cookies, health, saved picks, backups, and all outstanding launch gates in `LAUNCH.md`. The production paid-contest publication gate remains in place.
-5. Buy a domain only after verifying availability and the checkout price. `picks-club.com` is the preference, not a purchased asset. Add it under the Render service's custom domains and use the DNS records Render supplies. Once verified, update `APP_ORIGIN` to the final HTTPS domain and configure email-domain verification.
+5. The owner purchased `picks-club.com` through Namecheap. Add it under the Render service's custom domains and use the DNS records Render supplies in Namecheap. Once verified, set `APP_ORIGIN=https://picks-club.com` and configure email-domain verification.
 
 Hosting, billing, DNS, and email delivery have not yet been activated. See [Render Blueprints](https://render.com/docs/blueprint-spec), [Postgres connections](https://render.com/docs/postgresql-creating-connecting), and [custom domains](https://render.com/docs/custom-domains).

@@ -28,6 +28,7 @@ import { lineupOpen } from "./lineup-deadline.js";
 import { addContestRoutes } from "./contest.js";
 import { addRecoveryRoutes, emailReady } from "./recovery.js";
 import { addSmsRoutes } from "./sms.js";
+import { requestLimit, concurrentRequests } from "./abuse.js";
 export const timezones = [
   "America/New_York",
   "America/Chicago",
@@ -139,8 +140,16 @@ export function createApp(
     }
     next();
   });
-  app.use("/api/auth/profile", express.json({ limit: "128kb" }));
-  app.use(express.json({ limit: "32kb" }));
+  // Global limiter first also bounds the number of per-IP entries retained in memory.
+  app.use(requestLimit(1200, 60_000, true));
+  app.use(requestLimit(240));
+  app.use("/api", concurrentRequests(20));
+  app.use("/api/auth", concurrentRequests(4));
+  app.use(
+    "/api/auth/profile",
+    express.json({ limit: "128kb", inflate: false }),
+  );
+  app.use(express.json({ limit: "32kb", inflate: false }));
   app.use("/api", (req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -788,8 +797,8 @@ export function createApp(
       const status =
         error instanceof HttpError
           ? error.status
-          : error.status === 400
-            ? 400
+          : [400, 413, 415, 429, 503].includes(error.status ?? 0)
+            ? error.status!
             : 500;
       if (status === 500) console.error("Request failed:", error.message);
       res.status(status).json({

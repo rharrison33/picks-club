@@ -9,6 +9,7 @@ import {
   type User,
 } from "./auth.js";
 import { transaction } from "./database.js";
+import { reserveUsage } from "./usage.js";
 export const emailReady = () =>
   !!(
     process.env.RESEND_API_KEY &&
@@ -52,6 +53,16 @@ export function addRecoveryRoutes(
 ) {
   const limiter = authLimiter();
   async function issue(id: string, email: string, purpose: "verify" | "reset") {
+    const date = new Date().toISOString();
+    await reserveUsage(db, [
+      { scope: "email-day", period: date.slice(0, 10), limit: 90 },
+      { scope: "email-month", period: date.slice(0, 7), limit: 2500 },
+      {
+        scope: "email-recipient:" + tokenHash(email.toLowerCase()),
+        period: date.slice(0, 10),
+        limit: 5,
+      },
+    ]);
     const token = randomBytes(32).toString("hex"),
       hash = tokenHash(token);
     await db
